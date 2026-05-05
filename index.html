@@ -1,0 +1,571 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Modèle de bonheur — Bubble Map</title>
+<script src="https://d3js.org/d3.v7.min.js"></script>
+<style>
+  :root {
+    --bg: #0a0a12;
+    --bg-2: #14101f;
+    --text: #f5f5fa;
+    --muted: #9aa0b4;
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0;
+    padding: 0;
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+    background: radial-gradient(ellipse at 50% 35%, #1a1530 0%, #0a0a12 60%, #050509 100%);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", Roboto, sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  #header {
+    position: fixed;
+    top: 24px;
+    left: 0;
+    right: 0;
+    text-align: center;
+    pointer-events: none;
+    z-index: 10;
+  }
+  #header h1 {
+    margin: 0;
+    font-size: 28px;
+    font-weight: 600;
+    letter-spacing: 0.5px;
+    background: linear-gradient(135deg, #fff 0%, #c5b9ff 100%);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+  #header p {
+    margin: 6px 0 0;
+    font-size: 13px;
+    color: var(--muted);
+    letter-spacing: 0.3px;
+  }
+  #legend {
+    position: fixed;
+    bottom: 20px;
+    left: 50%;
+    transform: translateX(-50%);
+    display: flex;
+    gap: 18px;
+    padding: 12px 22px;
+    background: rgba(20, 16, 31, 0.55);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border: 1px solid rgba(255,255,255,0.07);
+    border-radius: 999px;
+    z-index: 10;
+    font-size: 12.5px;
+  }
+  .legend-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    color: #d8dae8;
+    cursor: default;
+  }
+  .legend-dot {
+    width: 11px;
+    height: 11px;
+    border-radius: 50%;
+    box-shadow: 0 0 10px currentColor;
+  }
+  #tooltip {
+    position: fixed;
+    pointer-events: none;
+    padding: 7px 12px;
+    border-radius: 8px;
+    background: rgba(15, 12, 24, 0.92);
+    border: 1px solid rgba(255,255,255,0.1);
+    color: #fff;
+    font-size: 13px;
+    font-weight: 500;
+    opacity: 0;
+    transition: opacity 0.15s ease;
+    z-index: 20;
+    white-space: nowrap;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.6);
+  }
+  #chart {
+    width: 100vw;
+    height: 100vh;
+    display: block;
+    cursor: grab;
+  }
+  #chart:active { cursor: grabbing; }
+  .node text {
+    pointer-events: none;
+    user-select: none;
+    fill: #fff;
+    font-weight: 500;
+    text-anchor: middle;
+    dominant-baseline: central;
+    text-shadow: 0 1px 3px rgba(0,0,0,0.85);
+  }
+  .link {
+    stroke: #ffffff;
+    stroke-opacity: 0.12;
+    pointer-events: none;
+    transition: stroke-opacity 0.2s ease, stroke 0.2s ease;
+  }
+  .node circle {
+    cursor: pointer;
+    transition: filter 0.2s ease, opacity 0.2s ease;
+  }
+  .node.dim circle { opacity: 0.2; }
+  .node.dim text { opacity: 0.25; }
+  .link.dim { stroke-opacity: 0.03; }
+  .link.hot { stroke-opacity: 0.85; }
+</style>
+</head>
+<body>
+  <div id="header">
+    <h1>Modèle de bonheur</h1>
+    <p>Les connexions révèlent ce qui compte vraiment</p>
+  </div>
+  <svg id="chart"></svg>
+  <div id="tooltip"></div>
+  <div id="legend"></div>
+
+<script>
+/* ===========================
+   DATA
+=========================== */
+const PILLARS = [
+  {
+    id: "p_relations", label: "Relations", emoji: "💝", color: "#f87171",
+    subs: [
+      { id: "s_famille", label: "Famille", elements: [
+        "Proximité affective", "Rituels de contact", "Cercle de proches", "Disponibilité mutuelle"
+      ]},
+      { id: "s_amis", label: "Amis proches", elements: [
+        "Activités partagées", "Stimulation sociale", "Complicité"
+      ]},
+      { id: "s_amour", label: "Vie amoureuse", elements: [
+        "Projets communs", "Respect individualité", "Attirance & affinités"
+      ]},
+    ]
+  },
+  {
+    id: "p_sante", label: "Santé", emoji: "💪", color: "#4ade80",
+    subs: [
+      { id: "s_sport", label: "Sport & activité", elements: [
+        "Sport 4x/semaine", "Musculation fullbody", "Activités plaisir"
+      ]},
+      { id: "s_alim", label: "Alimentation", elements: [
+        "Tracking macro", "Plaisir alimentaire", "Cuisine maison"
+      ]},
+      { id: "s_recup", label: "Récupération", elements: [
+        "Sommeil 7-8h", "Gestion du stress", "Énergie quotidienne"
+      ]},
+    ]
+  },
+  {
+    id: "p_pro", label: "Professionnel", emoji: "💼", color: "#60a5fa",
+    subs: [
+      { id: "s_epan", label: "Épanouissement", elements: [
+        "Métier épanouissant", "Mission qui a du sens", "Autonomie & responsabilités",
+        "Montée en compétences", "Domaine tech/data/IA"
+      ]},
+      { id: "s_revenu", label: "Revenu", elements: [
+        "Bon salaire", "Progression salariale"
+      ]},
+      { id: "s_temps", label: "Temps libre", elements: [
+        "Heures raisonnables", "Flexibilité/télétravail", "Coupure réelle le soir"
+      ]},
+    ]
+  },
+  {
+    id: "p_intel", label: "Stimulation intellectuelle", emoji: "🧠", color: "#c084fc",
+    subs: [
+      { id: "s_disc", label: "Discussions", elements: [
+        "Discussions profondes"
+      ]},
+      { id: "s_medias", label: "Médias & contenus", elements: [
+        "Podcasts", "Veille IA & tech", "Livres & articles"
+      ]},
+      { id: "s_decouv", label: "Découvertes", elements: [
+        "Nouveaux concepts", "Projets perso ambitieux", "Voyages & cultures"
+      ]},
+    ]
+  },
+  {
+    id: "p_cadre", label: "Cadre de vie", emoji: "🏡", color: "#fb923c",
+    subs: [
+      { id: "s_geo", label: "Géographie", elements: [
+        "Grande ville dynamique", "☀️ Soleil & chaleur", "Plein air & outdoor", "Proximité nature"
+      ]},
+      { id: "s_quartier", label: "Quartier", elements: [
+        "Quartier vivant", "Sûr & agréable"
+      ]},
+      { id: "s_habitation", label: "Habitation", elements: [
+        "Maison avec jardin 🌿", "Espace & luminosité", "Bureau dédié"
+      ]},
+    ]
+  },
+];
+
+// Build nodes + hierarchical links
+const nodes = [];
+const links = [];
+const labelToId = new Map();
+
+function slug(s) {
+  return "n_" + s.toLowerCase()
+    .normalize("NFD").replace(/[̀-ͯ]/g, "")
+    .replace(/[^a-z0-9]+/g, "_").replace(/^_|_$/g, "");
+}
+
+PILLARS.forEach(p => {
+  nodes.push({
+    id: p.id, label: p.label, emoji: p.emoji, type: "pillar",
+    color: p.color, pillar: p.id, radius: 46
+  });
+  labelToId.set(p.label, p.id);
+  p.subs.forEach(sub => {
+    nodes.push({
+      id: sub.id, label: sub.label, type: "sub",
+      color: p.color, pillar: p.id, radius: 26
+    });
+    labelToId.set(sub.label, sub.id);
+    links.push({ source: p.id, target: sub.id, strength: 0.9, kind: "hier" });
+    sub.elements.forEach(el => {
+      const id = slug(el);
+      nodes.push({
+        id, label: el, type: "elem",
+        color: p.color, pillar: p.id, radius: 17
+      });
+      labelToId.set(el, id);
+      links.push({ source: sub.id, target: id, strength: 0.7, kind: "hier" });
+    });
+  });
+});
+
+// Inter-pillar links — map free text to actual node ids
+const INTER = [
+  ["Métier épanouissant", "Stimulation intellectuelle", 0.75],
+  ["Métier épanouissant", "Veille IA & tech", 0.65],
+  ["Métier épanouissant", "Nouveaux concepts", 0.55],
+  ["Projets perso ambitieux", "Autonomie & responsabilités", 0.50],
+  ["Projets perso ambitieux", "Montée en compétences", 0.50],
+  ["Podcasts", "Heures raisonnables", 0.35],
+  ["Discussions profondes", "Amis proches", 0.55],
+  ["Discussions profondes", "Stimulation sociale", 0.55],
+  ["Discussions profondes", "Vie amoureuse", 0.35],
+  ["Gestion du stress", "Temps libre", 0.45],
+  ["Gestion du stress", "Autonomie & responsabilités", 0.35],
+  ["Énergie quotidienne", "Métier épanouissant", 0.35],
+  ["Énergie quotidienne", "Projets perso ambitieux", 0.35],
+  ["Grande ville dynamique", "Amis proches", 0.35],
+  ["Maison avec jardin 🌿", "Projets communs", 0.30],
+  ["☀️ Soleil & chaleur", "Sport 4x/semaine", 0.45],
+  ["Proximité nature", "Sport 4x/semaine", 0.40],
+  ["☀️ Soleil & chaleur", "Énergie quotidienne", 0.35],
+  ["Voyages & cultures", "☀️ Soleil & chaleur", 0.30],
+  ["Montée en compétences", "Nouveaux concepts", 0.45],
+];
+
+// Resolve aliases — "Stimulation intellectuelle" the pillar refers to its pillar node
+INTER.forEach(([a, b, s]) => {
+  const sid = labelToId.get(a);
+  const tid = labelToId.get(b);
+  if (!sid || !tid) {
+    console.warn("Unresolved inter-link", a, b);
+    return;
+  }
+  links.push({ source: sid, target: tid, strength: s, kind: "inter" });
+});
+
+/* ===========================
+   SVG SETUP
+=========================== */
+const svg = d3.select("#chart");
+const width = () => window.innerWidth;
+const height = () => window.innerHeight;
+
+// Defs: radial gradients per pillar + glow filter
+const defs = svg.append("defs");
+
+PILLARS.forEach(p => {
+  const c = d3.color(p.color);
+  const center = c.brighter(1.2).formatHex();
+  const edge = c.darker(0.9).formatHex();
+  const grad = defs.append("radialGradient")
+    .attr("id", `grad_${p.id}`)
+    .attr("cx", "35%").attr("cy", "32%").attr("r", "75%");
+  grad.append("stop").attr("offset", "0%").attr("stop-color", "#ffffff").attr("stop-opacity", 0.85);
+  grad.append("stop").attr("offset", "18%").attr("stop-color", center).attr("stop-opacity", 1);
+  grad.append("stop").attr("offset", "70%").attr("stop-color", p.color).attr("stop-opacity", 1);
+  grad.append("stop").attr("offset", "100%").attr("stop-color", edge).attr("stop-opacity", 1);
+});
+
+// Glow filter
+const glow = defs.append("filter")
+  .attr("id", "glow")
+  .attr("x", "-80%").attr("y", "-80%")
+  .attr("width", "260%").attr("height", "260%");
+glow.append("feGaussianBlur").attr("stdDeviation", "6").attr("result", "blur");
+const merge = glow.append("feMerge");
+merge.append("feMergeNode").attr("in", "blur");
+merge.append("feMergeNode").attr("in", "SourceGraphic");
+
+// Soft outer halo container (separate softer blur)
+const halo = defs.append("filter")
+  .attr("id", "halo")
+  .attr("x", "-150%").attr("y", "-150%")
+  .attr("width", "400%").attr("height", "400%");
+halo.append("feGaussianBlur").attr("stdDeviation", "14").attr("result", "blur");
+
+const root = svg.append("g");
+
+// Zoom / pan
+svg.call(d3.zoom()
+  .scaleExtent([0.4, 3])
+  .on("zoom", (e) => root.attr("transform", e.transform))
+);
+
+const linkG = root.append("g").attr("class", "links");
+const haloG = root.append("g").attr("class", "halos");
+const nodeG = root.append("g").attr("class", "nodes");
+
+/* ===========================
+   ADJACENCY for highlight
+=========================== */
+const neighbors = new Map();
+nodes.forEach(n => neighbors.set(n.id, new Set([n.id])));
+links.forEach(l => {
+  const s = typeof l.source === "object" ? l.source.id : l.source;
+  const t = typeof l.target === "object" ? l.target.id : l.target;
+  neighbors.get(s).add(t);
+  neighbors.get(t).add(s);
+});
+
+/* ===========================
+   FORCE SIMULATION
+=========================== */
+const simulation = d3.forceSimulation(nodes)
+  .force("charge", d3.forceManyBody().strength(d => {
+    if (d.type === "pillar") return -1400;
+    if (d.type === "sub") return -500;
+    return -260;
+  }))
+  .force("link", d3.forceLink(links).id(d => d.id)
+    .distance(l => {
+      if (l.kind === "inter") return 180 - 80 * l.strength;
+      if (l.source.type === "pillar") return 90;
+      return 55;
+    })
+    .strength(l => {
+      if (l.kind === "inter") return l.strength * 0.45;
+      return 0.9;
+    })
+  )
+  .force("collide", d3.forceCollide().radius(d => d.radius + 6).strength(0.95))
+  .force("center", d3.forceCenter(width() / 2, height() / 2))
+  .force("x", d3.forceX(width() / 2).strength(0.04))
+  .force("y", d3.forceY(height() / 2).strength(0.05))
+  .alpha(1)
+  .alphaDecay(0.025);
+
+/* ===========================
+   RENDER
+=========================== */
+const link = linkG.selectAll("line")
+  .data(links)
+  .join("line")
+  .attr("class", "link")
+  .attr("stroke-width", d => d.kind === "inter" ? 1.2 + d.strength * 1.6 : 0.9)
+  .attr("stroke", d => {
+    if (d.kind === "inter") return "#ffffff";
+    return "#ffffff";
+  })
+  .attr("stroke-opacity", d => d.kind === "inter" ? 0.18 + d.strength * 0.25 : 0.10);
+
+const haloCircle = haloG.selectAll("circle")
+  .data(nodes)
+  .join("circle")
+  .attr("r", d => d.radius * 1.25)
+  .attr("fill", d => d.color)
+  .attr("opacity", d => d.type === "pillar" ? 0.55 : d.type === "sub" ? 0.35 : 0.22)
+  .attr("filter", "url(#halo)")
+  .attr("pointer-events", "none");
+
+const node = nodeG.selectAll("g.node")
+  .data(nodes)
+  .join("g")
+  .attr("class", "node")
+  .call(drag(simulation));
+
+node.append("circle")
+  .attr("r", d => d.radius)
+  .attr("fill", d => `url(#grad_${d.pillar})`)
+  .attr("stroke", d => d3.color(d.color).brighter(0.6).formatHex())
+  .attr("stroke-opacity", 0.6)
+  .attr("stroke-width", d => d.type === "pillar" ? 1.5 : 1);
+
+// Inner highlight (pseudo-3D)
+node.append("circle")
+  .attr("r", d => d.radius * 0.45)
+  .attr("cx", d => -d.radius * 0.28)
+  .attr("cy", d => -d.radius * 0.32)
+  .attr("fill", "#ffffff")
+  .attr("opacity", 0.18)
+  .attr("pointer-events", "none")
+  .attr("filter", "url(#glow)");
+
+// Text — split across lines for readability
+node.each(function(d) {
+  const g = d3.select(this);
+  let fontSize;
+  if (d.type === "pillar") fontSize = 12;
+  else if (d.type === "sub") fontSize = 10.5;
+  else fontSize = 9;
+
+  const maxChars = d.type === "pillar" ? 14 : d.type === "sub" ? 13 : 13;
+  const lines = wrapText(d.label, maxChars);
+  const lineHeight = fontSize * 1.1;
+  const totalH = lines.length * lineHeight;
+  const yStart = -totalH / 2 + lineHeight / 2;
+
+  if (d.type === "pillar" && d.emoji) {
+    g.append("text")
+      .attr("y", yStart - lineHeight * 0.6)
+      .attr("font-size", 18)
+      .text(d.emoji);
+    lines.forEach((ln, i) => {
+      g.append("text")
+        .attr("y", yStart + lineHeight * (i + 0.7))
+        .attr("font-size", fontSize)
+        .attr("font-weight", 600)
+        .text(ln);
+    });
+  } else {
+    lines.forEach((ln, i) => {
+      g.append("text")
+        .attr("y", yStart + i * lineHeight)
+        .attr("font-size", fontSize)
+        .attr("font-weight", d.type === "sub" ? 600 : 500)
+        .text(ln);
+    });
+  }
+});
+
+function wrapText(text, maxChars) {
+  const words = text.split(/\s+/);
+  const lines = [];
+  let cur = "";
+  for (const w of words) {
+    if (!cur.length) { cur = w; continue; }
+    if ((cur + " " + w).length <= maxChars) cur += " " + w;
+    else { lines.push(cur); cur = w; }
+  }
+  if (cur) lines.push(cur);
+  return lines.slice(0, 3);
+}
+
+/* ===========================
+   INTERACTIONS
+=========================== */
+const tooltip = d3.select("#tooltip");
+
+node.on("mouseenter", function(event, d) {
+  const nbrs = neighbors.get(d.id);
+  node.classed("dim", n => !nbrs.has(n.id));
+  haloCircle.attr("opacity", n => {
+    if (!nbrs.has(n.id)) return 0.05;
+    return n.type === "pillar" ? 0.7 : n.type === "sub" ? 0.5 : 0.35;
+  });
+  link.classed("hot", l => l.source.id === d.id || l.target.id === d.id)
+      .classed("dim", l => !(l.source.id === d.id || l.target.id === d.id));
+
+  d3.select(this).select("circle")
+    .transition().duration(150)
+    .attr("r", d.radius * 1.12);
+
+  tooltip.style("opacity", 1)
+    .text(d.label)
+    .style("left", (event.clientX + 14) + "px")
+    .style("top", (event.clientY + 14) + "px");
+})
+.on("mousemove", function(event) {
+  tooltip.style("left", (event.clientX + 14) + "px")
+         .style("top", (event.clientY + 14) + "px");
+})
+.on("mouseleave", function(event, d) {
+  node.classed("dim", false);
+  link.classed("hot", false).classed("dim", false);
+  haloCircle.attr("opacity", n => n.type === "pillar" ? 0.55 : n.type === "sub" ? 0.35 : 0.22);
+  d3.select(this).select("circle")
+    .transition().duration(180)
+    .attr("r", d.radius);
+  tooltip.style("opacity", 0);
+});
+
+/* ===========================
+   TICK
+=========================== */
+simulation.on("tick", () => {
+  link
+    .attr("x1", d => d.source.x)
+    .attr("y1", d => d.source.y)
+    .attr("x2", d => d.target.x)
+    .attr("y2", d => d.target.y);
+
+  haloCircle
+    .attr("cx", d => d.x)
+    .attr("cy", d => d.y);
+
+  node.attr("transform", d => `translate(${d.x},${d.y})`);
+});
+
+/* ===========================
+   DRAG
+=========================== */
+function drag(sim) {
+  return d3.drag()
+    .on("start", (event, d) => {
+      if (!event.active) sim.alphaTarget(0.3).restart();
+      d.fx = d.x; d.fy = d.y;
+    })
+    .on("drag", (event, d) => {
+      d.fx = event.x; d.fy = event.y;
+    })
+    .on("end", (event, d) => {
+      if (!event.active) sim.alphaTarget(0);
+      d.fx = null; d.fy = null;
+    });
+}
+
+/* ===========================
+   LEGEND
+=========================== */
+const legend = d3.select("#legend");
+PILLARS.forEach(p => {
+  const item = legend.append("div").attr("class", "legend-item");
+  item.append("div").attr("class", "legend-dot")
+      .style("background", p.color)
+      .style("color", p.color);
+  item.append("span").text(`${p.emoji} ${p.label}`);
+});
+
+/* ===========================
+   RESPONSIVE
+=========================== */
+function resize() {
+  simulation.force("center", d3.forceCenter(width() / 2, height() / 2));
+  simulation.force("x", d3.forceX(width() / 2).strength(0.04));
+  simulation.force("y", d3.forceY(height() / 2).strength(0.05));
+  simulation.alpha(0.4).restart();
+}
+window.addEventListener("resize", resize);
+</script>
+</body>
+</html>
