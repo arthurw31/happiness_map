@@ -1,0 +1,654 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Modèle de bonheur</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  body {
+    margin: 0;
+    overflow: hidden;
+    background: #0a0812;
+    font-family: 'DM Sans', sans-serif;
+  }
+  svg { display: block; }
+  .node { cursor: pointer; }
+  .node text { user-select: none; }
+  #legend .badge:hover { background: rgba(255,255,255,0.10) !important; }
+</style>
+</head>
+<body>
+
+<div style="position:fixed;top:20px;left:50%;transform:translateX(-50%);
+  text-align:center;pointer-events:none;z-index:10;">
+  <div style="color:#e2e8f0;font-size:18px;font-weight:600;letter-spacing:-0.3px;
+    font-family:'DM Sans',sans-serif;">Modèle de bonheur</div>
+  <div style="color:#7c6fa0;font-size:11px;font-style:italic;margin-top:3px;
+    font-family:'DM Sans',sans-serif;">Les connexions révèlent ce qui compte vraiment</div>
+</div>
+
+<div id="tooltip" style="position:fixed;display:none;pointer-events:none;
+  background:rgba(15,12,26,0.92);border:1px solid rgba(255,255,255,0.12);
+  border-radius:8px;padding:6px 12px;font-size:12px;color:#e2e8f0;
+  font-family:'DM Sans',sans-serif;backdrop-filter:blur(8px);
+  box-shadow:0 4px 20px rgba(0,0,0,0.5);z-index:100;white-space:nowrap;"></div>
+
+<div id="legend" style="position:fixed;bottom:20px;left:50%;transform:translateX(-50%);
+  display:flex;gap:8px;flex-wrap:wrap;justify-content:center;z-index:10;pointer-events:all;"></div>
+
+<script src="https://cdn.jsdelivr.net/npm/d3@7/dist/d3.min.js"></script>
+<script>
+(() => {
+  let width = window.innerWidth;
+  let height = window.innerHeight;
+
+  const PILLAR_COLORS = {
+    relations: { mid: "#f472b6", highlight: "#fda4d3", dark: "#831843" },
+    sante:     { mid: "#34d399", highlight: "#6ee7b7", dark: "#064e3b" },
+    pro:       { mid: "#60a5fa", highlight: "#93c5fd", dark: "#1e3a8a" },
+    intel:     { mid: "#a78bfa", highlight: "#c4b5fd", dark: "#3b0764" },
+    cadre:     { mid: "#fb923c", highlight: "#fed7aa", dark: "#7c2d12" },
+  };
+
+  const PILLAR_LABELS = {
+    relations: "Relations",
+    sante: "Santé",
+    pro: "Professionnel",
+    intel: "Stimulation",
+    cadre: "Cadre de vie",
+  };
+
+  const nodes = [
+    // RELATIONS
+    { id: "relations",    label: "💝 Relations",           pillar: "relations", r: 44 },
+    { id: "famille",      label: "Famille",                pillar: "relations", r: 26 },
+    { id: "amis",         label: "Amis proches",           pillar: "relations", r: 26 },
+    { id: "amour",        label: "Vie amoureuse",          pillar: "relations", r: 26 },
+    { id: "stimsociale",  label: "Stimulation sociale",    pillar: "relations", r: 20 },
+    { id: "complicite",   label: "Complicité",             pillar: "relations", r: 20 },
+    { id: "projcommuns",  label: "Projets communs",        pillar: "relations", r: 20 },
+    { id: "cercle",       label: "Cercle de proches",      pillar: "relations", r: 18 },
+    { id: "dispo",        label: "Disponibilité",          pillar: "relations", r: 15 },
+    { id: "attirance",    label: "Attirance & affinités",  pillar: "relations", r: 15 },
+
+    // SANTÉ
+    { id: "sante",        label: "💪 Santé",               pillar: "sante",     r: 44 },
+    { id: "sport4x",      label: "Sport 4x/sem",           pillar: "sante",     r: 26 },
+    { id: "muscu",        label: "Musculation",            pillar: "sante",     r: 20 },
+    { id: "alimentation", label: "Alimentation",           pillar: "sante",     r: 26 },
+    { id: "sommeil",      label: "Sommeil 7-8h",           pillar: "sante",     r: 22 },
+    { id: "energie",      label: "Énergie quotidienne",    pillar: "sante",     r: 22 },
+    { id: "stress",       label: "Gestion stress",         pillar: "sante",     r: 20 },
+    { id: "activ_plaisir",label: "Activités plaisir",      pillar: "sante",     r: 18 },
+    { id: "macro",        label: "Tracking macro",         pillar: "sante",     r: 15 },
+
+    // PROFESSIONNEL
+    { id: "pro",          label: "💼 Professionnel",       pillar: "pro",       r: 44 },
+    { id: "metier",       label: "Métier épanouissant",    pillar: "pro",       r: 30 },
+    { id: "autonomie",    label: "Autonomie",              pillar: "pro",       r: 22 },
+    { id: "competences",  label: "Compétences",            pillar: "pro",       r: 22 },
+    { id: "domaine",      label: "Tech / Data / IA",       pillar: "pro",       r: 24 },
+    { id: "salaire",      label: "Bon salaire",            pillar: "pro",       r: 22 },
+    { id: "tempslibres",  label: "Temps libre",            pillar: "pro",       r: 22 },
+    { id: "flex",         label: "Flexibilité",            pillar: "pro",       r: 18 },
+    { id: "equipe",       label: "Bonne équipe",           pillar: "pro",       r: 18 },
+    { id: "mission",      label: "Mission & sens",         pillar: "pro",       r: 20 },
+
+    // STIMULATION INTELLECTUELLE
+    { id: "intel",        label: "🧠 Stimulation",         pillar: "intel",     r: 44 },
+    { id: "podcasts",     label: "Podcasts",               pillar: "intel",     r: 26 },
+    { id: "veille",       label: "Veille IA & tech",       pillar: "intel",     r: 26 },
+    { id: "concepts",     label: "Nouveaux concepts",      pillar: "intel",     r: 22 },
+    { id: "discussions",  label: "Discussions profondes",  pillar: "intel",     r: 22 },
+    { id: "projperso",    label: "Projets perso",          pillar: "intel",     r: 24 },
+    { id: "livres",       label: "Livres & articles",      pillar: "intel",     r: 16 },
+    { id: "voyages",      label: "Voyages & cultures",     pillar: "intel",     r: 18 },
+
+    // CADRE DE VIE
+    { id: "cadre",        label: "🏡 Cadre de vie",        pillar: "cadre",     r: 44 },
+    { id: "soleil",       label: "☀️ Soleil & chaleur",    pillar: "cadre",     r: 26 },
+    { id: "maison",       label: "Maison avec jardin 🌿",  pillar: "cadre",     r: 26 },
+    { id: "nature",       label: "Proximité nature",       pillar: "cadre",     r: 22 },
+    { id: "ville",        label: "Grande ville",           pillar: "cadre",     r: 20 },
+    { id: "pleinair",     label: "Plein air & outdoor",    pillar: "cadre",     r: 20 },
+    { id: "quartier_viv", label: "Quartier vivant",        pillar: "cadre",     r: 18 },
+    { id: "luminosite",   label: "Espace & luminosité",    pillar: "cadre",     r: 18 },
+    { id: "bureau",       label: "Bureau dédié",           pillar: "cadre",     r: 16 },
+  ];
+
+  const links = [
+    // INTRA Relations
+    { source: "relations",   target: "famille",      strength: 0.95 },
+    { source: "relations",   target: "amis",         strength: 0.95 },
+    { source: "relations",   target: "amour",        strength: 0.95 },
+    { source: "famille",     target: "amis",         strength: 0.55 },
+    { source: "famille",     target: "amour",        strength: 0.50 },
+    { source: "amis",        target: "cercle",       strength: 0.85 },
+    { source: "amis",        target: "stimsociale",  strength: 0.80 },
+    { source: "amis",        target: "dispo",        strength: 0.75 },
+    { source: "amour",       target: "complicite",   strength: 0.90 },
+    { source: "amour",       target: "projcommuns",  strength: 0.80 },
+    { source: "amour",       target: "attirance",    strength: 0.85 },
+    { source: "complicite",  target: "stimsociale",  strength: 0.55 },
+    { source: "projcommuns", target: "famille",      strength: 0.45 },
+    // INTRA Santé
+    { source: "sante",       target: "sport4x",      strength: 0.95 },
+    { source: "sante",       target: "alimentation", strength: 0.95 },
+    { source: "sante",       target: "sommeil",      strength: 0.95 },
+    { source: "sante",       target: "energie",      strength: 0.90 },
+    { source: "sante",       target: "stress",       strength: 0.85 },
+    { source: "sport4x",     target: "muscu",        strength: 0.90 },
+    { source: "sport4x",     target: "energie",      strength: 0.75 },
+    { source: "sport4x",     target: "activ_plaisir",strength: 0.65 },
+    { source: "sommeil",     target: "energie",      strength: 0.80 },
+    { source: "sommeil",     target: "stress",       strength: 0.65 },
+    { source: "alimentation",target: "macro",        strength: 0.80 },
+    { source: "alimentation",target: "energie",      strength: 0.60 },
+    { source: "stress",      target: "energie",      strength: 0.55 },
+    // INTRA Pro
+    { source: "pro",         target: "metier",       strength: 0.95 },
+    { source: "pro",         target: "salaire",      strength: 0.90 },
+    { source: "pro",         target: "tempslibres",  strength: 0.90 },
+    { source: "pro",         target: "autonomie",    strength: 0.85 },
+    { source: "metier",      target: "mission",      strength: 0.85 },
+    { source: "metier",      target: "autonomie",    strength: 0.80 },
+    { source: "metier",      target: "domaine",      strength: 0.85 },
+    { source: "metier",      target: "competences",  strength: 0.80 },
+    { source: "metier",      target: "equipe",       strength: 0.65 },
+    { source: "tempslibres", target: "flex",         strength: 0.80 },
+    { source: "autonomie",   target: "flex",         strength: 0.65 },
+    { source: "domaine",     target: "competences",  strength: 0.75 },
+    // INTRA Intel
+    { source: "intel",       target: "podcasts",     strength: 0.95 },
+    { source: "intel",       target: "veille",       strength: 0.95 },
+    { source: "intel",       target: "discussions",  strength: 0.90 },
+    { source: "intel",       target: "projperso",    strength: 0.90 },
+    { source: "intel",       target: "concepts",     strength: 0.90 },
+    { source: "podcasts",    target: "veille",       strength: 0.75 },
+    { source: "podcasts",    target: "concepts",     strength: 0.65 },
+    { source: "veille",      target: "concepts",     strength: 0.80 },
+    { source: "discussions", target: "concepts",     strength: 0.60 },
+    { source: "projperso",   target: "concepts",     strength: 0.70 },
+    { source: "livres",      target: "concepts",     strength: 0.65 },
+    { source: "voyages",     target: "intel",        strength: 0.65 },
+    // INTRA Cadre
+    { source: "cadre",       target: "soleil",       strength: 0.95 },
+    { source: "cadre",       target: "maison",       strength: 0.95 },
+    { source: "cadre",       target: "nature",       strength: 0.90 },
+    { source: "cadre",       target: "ville",        strength: 0.85 },
+    { source: "soleil",      target: "pleinair",     strength: 0.80 },
+    { source: "soleil",      target: "nature",       strength: 0.75 },
+    { source: "nature",      target: "pleinair",     strength: 0.80 },
+    { source: "nature",      target: "maison",       strength: 0.55 },
+    { source: "ville",       target: "quartier_viv", strength: 0.80 },
+    { source: "maison",      target: "luminosite",   strength: 0.75 },
+    { source: "maison",      target: "bureau",       strength: 0.65 },
+    // INTER-PILLAR — Pro ↔ Intel
+    { source: "podcasts",    target: "metier",       strength: 0.75 },
+    { source: "podcasts",    target: "domaine",      strength: 0.70 },
+    { source: "veille",      target: "metier",       strength: 0.80 },
+    { source: "veille",      target: "domaine",      strength: 0.85 },
+    { source: "veille",      target: "competences",  strength: 0.70 },
+    { source: "concepts",    target: "metier",       strength: 0.65 },
+    { source: "concepts",    target: "competences",  strength: 0.70 },
+    { source: "projperso",   target: "metier",       strength: 0.60 },
+    { source: "projperso",   target: "autonomie",    strength: 0.65 },
+    { source: "projperso",   target: "competences",  strength: 0.60 },
+    { source: "discussions", target: "mission",      strength: 0.50 },
+    // INTER — Stim ↔ Relations
+    { source: "discussions", target: "amis",         strength: 0.70 },
+    { source: "discussions", target: "stimsociale",  strength: 0.65 },
+    { source: "discussions", target: "amour",        strength: 0.50 },
+    { source: "discussions", target: "complicite",   strength: 0.55 },
+    { source: "voyages",     target: "amis",         strength: 0.40 },
+    { source: "livres",      target: "discussions",  strength: 0.55 },
+    // INTER — Santé ↔ Cadre
+    { source: "soleil",      target: "sport4x",      strength: 0.60 },
+    { source: "soleil",      target: "energie",      strength: 0.55 },
+    { source: "nature",      target: "sport4x",      strength: 0.55 },
+    { source: "nature",      target: "activ_plaisir",strength: 0.60 },
+    { source: "pleinair",    target: "sport4x",      strength: 0.65 },
+    { source: "pleinair",    target: "activ_plaisir",strength: 0.65 },
+    // INTER — Pro ↔ Santé
+    { source: "stress",      target: "tempslibres",  strength: 0.60 },
+    { source: "stress",      target: "autonomie",    strength: 0.50 },
+    { source: "energie",     target: "metier",       strength: 0.50 },
+    { source: "energie",     target: "projperso",    strength: 0.45 },
+    { source: "tempslibres", target: "sport4x",      strength: 0.45 },
+    { source: "flex",        target: "sommeil",      strength: 0.40 },
+    // INTER — Relations ↔ Cadre
+    { source: "ville",       target: "amis",         strength: 0.50 },
+    { source: "quartier_viv",target: "amis",         strength: 0.45 },
+    { source: "maison",      target: "projcommuns",  strength: 0.45 },
+    { source: "maison",      target: "famille",      strength: 0.40 },
+    // INTER — Relations ↔ Pro
+    { source: "equipe",      target: "stimsociale",  strength: 0.50 },
+    { source: "equipe",      target: "amis",         strength: 0.40 },
+    // INTER — Cadre ↔ Pro
+    { source: "bureau",      target: "projperso",    strength: 0.55 },
+    { source: "bureau",      target: "flex",         strength: 0.60 },
+    { source: "bureau",      target: "autonomie",    strength: 0.45 },
+    // INTER — Voyages ↔ Cadre
+    { source: "voyages",     target: "soleil",       strength: 0.45 },
+    { source: "voyages",     target: "ville",        strength: 0.40 },
+    { source: "voyages",     target: "pleinair",     strength: 0.40 },
+    // INTER — Temps libre ↔ Relations
+    { source: "tempslibres", target: "famille",      strength: 0.50 },
+    { source: "tempslibres", target: "amis",         strength: 0.50 },
+    { source: "flex",        target: "famille",      strength: 0.40 },
+    { source: "podcasts",    target: "tempslibres",  strength: 0.40 },
+    // INTER — Intel ↔ Pro (veille/domaine bridge)
+    { source: "veille",      target: "domaine",      strength: 0.85 },
+  ];
+
+  const nodeById = {};
+  nodes.forEach(n => nodeById[n.id] = n);
+
+  // Tag inter-pillar links BEFORE simulation resolves source/target
+  links.forEach(l => {
+    const sn = nodeById[l.source];
+    const tn = nodeById[l.target];
+    l.inter = sn && tn && sn.pillar !== tn.pillar;
+  });
+
+  // Seed positions
+  const pillarAngles = { relations: -2.4, sante: 2.5, pro: -0.5, intel: -1.5, cadre: 1.3 };
+  const clusterR = Math.min(width, height) * 0.24;
+  nodes.forEach(n => {
+    const a = pillarAngles[n.pillar];
+    n.x = width/2 + Math.cos(a)*clusterR + (Math.random()-0.5)*60;
+    n.y = height/2 + Math.sin(a)*clusterR + (Math.random()-0.5)*60;
+  });
+
+  // === SVG setup ===
+  const svg = d3.select("body").append("svg")
+    .attr("width", width)
+    .attr("height", height)
+    .attr("viewBox", `0 0 ${width} ${height}`)
+    .style("display", "block");
+
+  const defs = svg.append("defs");
+
+  // Glow filters
+  defs.html(`
+    <filter id="glow-strong" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur in="SourceGraphic" stdDeviation="12" result="blur"/>
+      <feMerge><feMergeNode in="blur"/><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+    <filter id="glow-medium" x="-40%" y="-40%" width="180%" height="180%">
+      <feGaussianBlur in="SourceGraphic" stdDeviation="6" result="blur"/>
+      <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+    <filter id="glow-soft" x="-30%" y="-30%" width="160%" height="160%">
+      <feGaussianBlur in="SourceGraphic" stdDeviation="3.5" result="blur"/>
+      <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+    <filter id="glow-hover" x="-60%" y="-60%" width="220%" height="220%">
+      <feGaussianBlur in="SourceGraphic" stdDeviation="18" result="blur"/>
+      <feMerge><feMergeNode in="blur"/><feMergeNode in="blur"/><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+  `);
+
+  // Per-node radial gradients
+  nodes.forEach(n => {
+    const c = PILLAR_COLORS[n.pillar];
+    const grad = defs.append("radialGradient")
+      .attr("id", `grad-${n.id}`)
+      .attr("cx", "35%").attr("cy", "28%").attr("r", "68%")
+      .attr("fx", "35%").attr("fy", "28%");
+    grad.append("stop").attr("offset", "0%").attr("stop-color", c.highlight).attr("stop-opacity", 1);
+    grad.append("stop").attr("offset", "40%").attr("stop-color", c.mid).attr("stop-opacity", 1);
+    grad.append("stop").attr("offset", "100%").attr("stop-color", c.dark).attr("stop-opacity", 0.9);
+  });
+
+  // Main zoom group
+  const g = svg.append("g");
+  const linkLayer = g.append("g").attr("id", "links");
+  const nodeLayer = g.append("g").attr("id", "nodes");
+
+  // === Force simulation ===
+  const simulation = d3.forceSimulation(nodes)
+    .force("link", d3.forceLink(links)
+      .id(d => d.id)
+      .distance(d => {
+        const sn = nodeById[d.source.id || d.source];
+        const tn = nodeById[d.target.id || d.target];
+        const samePillar = sn && tn && sn.pillar === tn.pillar;
+        const baseR = ((sn && sn.r) || 20) + ((tn && tn.r) || 20);
+        if (samePillar) return baseR * (1.4 + (1 - d.strength) * 1.2);
+        else return baseR * (2.5 + (1 - d.strength) * 8);
+      })
+      .strength(d => {
+        const sn = nodeById[d.source.id || d.source];
+        const tn = nodeById[d.target.id || d.target];
+        const samePillar = sn && tn && sn.pillar === tn.pillar;
+        return d.strength * (samePillar ? 0.5 : 0.35);
+      })
+    )
+    .force("charge", d3.forceManyBody()
+      .strength(d => -(d.r * d.r * 4.2))
+      .distanceMax(400)
+    )
+    .force("collision", d3.forceCollide()
+      .radius(d => d.r + 5)
+      .strength(0.9)
+      .iterations(4)
+    )
+    .force("x", d3.forceX(width / 2).strength(0.03))
+    .force("y", d3.forceY(height / 2).strength(0.03))
+    .force("cluster", () => {
+      nodes.forEach(n => {
+        const peers = nodes.filter(m => m.pillar === n.pillar && m.id !== n.id);
+        if (!peers.length) return;
+        const cx = peers.reduce((s, m) => s + (m.x||0), 0) / peers.length;
+        const cy = peers.reduce((s, m) => s + (m.y||0), 0) / peers.length;
+        n.vx += (cx - n.x) * 0.012;
+        n.vy += (cy - n.y) * 0.012;
+      });
+    })
+    .alphaDecay(0.012)
+    .velocityDecay(0.30)
+    .alphaMin(0.001);
+
+  // Tick once so source/target on links are resolved to objects
+  simulation.tick();
+
+  // Inter-pillar link gradients
+  links.forEach(l => {
+    if (l.inter) {
+      const sc = PILLAR_COLORS[l.source.pillar].mid;
+      const tc = PILLAR_COLORS[l.target.pillar].mid;
+      const grad = defs.append("linearGradient")
+        .attr("id", `lg-${l.source.id}-${l.target.id}`)
+        .attr("gradientUnits", "userSpaceOnUse");
+      grad.append("stop").attr("offset", "0%").attr("stop-color", sc);
+      grad.append("stop").attr("offset", "100%").attr("stop-color", tc);
+    }
+  });
+
+  // === Helpers ===
+  function glowFilter(r) {
+    if (r >= 40) return "url(#glow-strong)";
+    if (r >= 22) return "url(#glow-medium)";
+    return "url(#glow-soft)";
+  }
+  function lightenHex(hex, amt) {
+    const c = d3.hsl(hex);
+    c.l = Math.min(1, c.l + amt);
+    return c.formatHex();
+  }
+  function linkOpacity(d) {
+    return d.inter
+      ? 0.12 + d.strength * 0.22
+      : 0.15 + d.strength * 0.28;
+  }
+
+  // Canvas for measuring text
+  const measureCtx = document.createElement('canvas').getContext('2d');
+  function fontSizeFor(r) { return r >= 40 ? 13 : r >= 22 ? 10 : 8.5; }
+  function fontWeightFor(r) { return r >= 40 ? 700 : r >= 22 ? 600 : 500; }
+  function measureText(text, fontSize, weight) {
+    measureCtx.font = `${weight} ${fontSize}px 'DM Sans', sans-serif`;
+    return measureCtx.measureText(text).width;
+  }
+  function wrapIntoLines(text, maxWidth, fontSize, weight) {
+    const words = text.split(/\s+/);
+    const lines = [];
+    let current = "";
+    for (const word of words) {
+      const test = current ? current + " " + word : word;
+      if (measureText(test, fontSize, weight) <= maxWidth) {
+        current = test;
+      } else {
+        if (current) lines.push(current);
+        current = word;
+      }
+    }
+    if (current) lines.push(current);
+    return lines;
+  }
+
+  // === Links ===
+  const linkSel = linkLayer.selectAll("line")
+    .data(links)
+    .enter().append("line")
+      .attr("stroke", d => d.inter
+        ? `url(#lg-${d.source.id}-${d.target.id})`
+        : PILLAR_COLORS[d.source.pillar].mid
+      )
+      .attr("stroke-width", d => d.inter
+        ? 1 + d.strength * 2
+        : 1 + d.strength * 2.5
+      )
+      .attr("stroke-opacity", 0)
+      .attr("stroke-linecap", "round");
+
+  // === Nodes (sorted ascending so big nodes render on top) ===
+  const sortedNodes = [...nodes].sort((a, b) => a.r - b.r);
+
+  const nodeSel = nodeLayer.selectAll("g.node")
+    .data(sortedNodes, d => d.id)
+    .enter().append("g")
+      .attr("class", "node")
+      .style("cursor", "pointer");
+
+  nodeSel.each(function(n) {
+    const grp = d3.select(this);
+    const c = PILLAR_COLORS[n.pillar];
+    const strokeW = n.r >= 40 ? 2.5 : n.r >= 22 ? 1.8 : 1.2;
+
+    // Main bubble circle
+    grp.append("circle")
+      .attr("r", n.r)
+      .attr("fill", `url(#grad-${n.id})`)
+      .attr("fill-opacity", 0.82)
+      .attr("filter", glowFilter(n.r))
+      .attr("stroke", lightenHex(c.mid, 0.2))
+      .attr("stroke-width", strokeW)
+      .attr("stroke-opacity", 0.55);
+
+    // Specular highlight
+    grp.append("ellipse")
+      .attr("cx", -n.r * 0.22)
+      .attr("cy", -n.r * 0.28)
+      .attr("rx", n.r * 0.28)
+      .attr("ry", n.r * 0.16)
+      .attr("fill", "white")
+      .attr("fill-opacity", 0.22)
+      .attr("pointer-events", "none");
+
+    // Text label
+    const fs = fontSizeFor(n.r);
+    const fw = fontWeightFor(n.r);
+    const isPillar = n.r === 44;
+    const maxW = n.r * 1.7;
+
+    const text = grp.append("text")
+      .attr("text-anchor", "middle")
+      .attr("dominant-baseline", "middle")
+      .attr("fill", "#ffffff")
+      .attr("font-family", "'DM Sans', sans-serif")
+      .attr("font-size", fs)
+      .attr("font-weight", fw)
+      .attr("pointer-events", "none")
+      .style("text-shadow", "0 1px 3px rgba(0,0,0,0.55)");
+
+    if (isPillar && n.label.includes(" ")) {
+      const idx = n.label.indexOf(" ");
+      const emoji = n.label.slice(0, idx);
+      const rest = n.label.slice(idx + 1);
+      text.append("tspan")
+        .attr("x", 0)
+        .attr("dy", "-0.45em")
+        .attr("font-size", fs + 4)
+        .text(emoji);
+      text.append("tspan")
+        .attr("x", 0)
+        .attr("dy", "1.45em")
+        .text(rest);
+    } else {
+      const lines = wrapIntoLines(n.label, maxW, fs, fw);
+      const lineH = fs * 1.25;
+      const totalH = (lines.length - 1) * lineH;
+      lines.forEach((line, i) => {
+        text.append("tspan")
+          .attr("x", 0)
+          .attr("dy", i === 0 ? `${-totalH / 2}px` : `${lineH}px`)
+          .text(line);
+      });
+    }
+  });
+
+  // === Adjacency map for hover ===
+  const adj = new Map();
+  nodes.forEach(n => adj.set(n.id, new Set()));
+  links.forEach(l => {
+    const sset = adj.get(l.source.id);
+    const tset = adj.get(l.target.id);
+    if (sset) sset.add(l.target.id);
+    if (tset) tset.add(l.source.id);
+  });
+
+  // === Hover interactivity ===
+  const tooltip = document.getElementById("tooltip");
+  let focusedPillar = null;
+
+  function applyFocusState() {
+    if (focusedPillar) {
+      const visible = new Set();
+      nodes.forEach(n => { if (n.pillar === focusedPillar) visible.add(n.id); });
+      links.forEach(l => {
+        if (l.source.pillar === focusedPillar) visible.add(l.target.id);
+        if (l.target.pillar === focusedPillar) visible.add(l.source.id);
+      });
+      nodeSel.attr("opacity", n => visible.has(n.id) ? 1 : 0.1);
+      linkSel.attr("stroke-opacity", l => {
+        const inFocus = l.source.pillar === focusedPillar || l.target.pillar === focusedPillar;
+        return inFocus ? linkOpacity(l) : 0.04;
+      });
+    } else {
+      nodeSel.attr("opacity", 1);
+      linkSel.attr("stroke-opacity", l => linkOpacity(l));
+    }
+  }
+
+  nodeSel
+    .on("mouseenter", function(event, d) {
+      const neighbors = adj.get(d.id) || new Set();
+      nodeSel.attr("opacity", n => n.id === d.id || neighbors.has(n.id) ? 1 : 0.15);
+      linkSel.attr("stroke-opacity", l =>
+        (l.source.id === d.id || l.target.id === d.id)
+          ? Math.min(1, linkOpacity(l) * 2.5)
+          : 0.03
+      );
+      d3.select(this).select("circle").attr("filter", "url(#glow-hover)");
+      d3.select(this).raise();
+
+      tooltip.style.display = "block";
+      tooltip.textContent = d.label;
+      tooltip.style.borderColor = PILLAR_COLORS[d.pillar].mid + "66";
+    })
+    .on("mousemove", function(event) {
+      tooltip.style.left = (event.clientX + 12) + "px";
+      tooltip.style.top = (event.clientY - 28) + "px";
+    })
+    .on("mouseleave", function(event, d) {
+      d3.select(this).select("circle").attr("filter", glowFilter(d.r));
+      tooltip.style.display = "none";
+      applyFocusState();
+    });
+
+  // === Drag ===
+  const drag = d3.drag()
+    .on("start", (event, d) => {
+      if (!event.active) simulation.alphaTarget(0.3).restart();
+      d.fx = d.x; d.fy = d.y;
+    })
+    .on("drag", (event, d) => { d.fx = event.x; d.fy = event.y; })
+    .on("end", (event, d) => {
+      if (!event.active) simulation.alphaTarget(0);
+      d.fx = null; d.fy = null;
+    });
+  nodeSel.call(drag);
+
+  // === Zoom & pan ===
+  const zoom = d3.zoom().scaleExtent([0.25, 5])
+    .on("zoom", e => g.attr("transform", e.transform));
+  svg.call(zoom);
+
+  // === Tick handler ===
+  let linksRevealed = false;
+  simulation.on("tick", () => {
+    linkSel
+      .attr("x1", d => d.source.x)
+      .attr("y1", d => d.source.y)
+      .attr("x2", d => d.target.x)
+      .attr("y2", d => d.target.y);
+
+    nodeSel.attr("transform", d => `translate(${d.x},${d.y})`);
+
+    // Update inter-pillar gradient endpoints
+    links.forEach(l => {
+      if (l.inter) {
+        defs.select(`#lg-${l.source.id}-${l.target.id}`)
+          .attr("x1", l.source.x).attr("y1", l.source.y)
+          .attr("x2", l.target.x).attr("y2", l.target.y);
+      }
+    });
+
+    if (!linksRevealed && simulation.alpha() < 0.08) {
+      linksRevealed = true;
+      linkSel.transition().duration(1200)
+        .attr("stroke-opacity", d => linkOpacity(d));
+    }
+  });
+
+  // Kick the simulation
+  simulation.alpha(1).restart();
+
+  // === Legend ===
+  const legend = document.getElementById("legend");
+  Object.keys(PILLAR_COLORS).forEach(pk => {
+    const color = PILLAR_COLORS[pk].mid;
+    const badge = document.createElement("div");
+    badge.className = "badge";
+    badge.dataset.pillar = pk;
+    badge.style.cssText = `background:rgba(255,255,255,0.06); border:1px solid ${color}44;
+      border-radius:20px; padding:4px 12px; cursor:pointer;
+      font-size:11px; color:${color}; font-family:'DM Sans',sans-serif;
+      transition:all 0.2s; display:flex; align-items:center; gap:6px;`;
+    const dot = document.createElement("span");
+    dot.style.cssText = `width:7px; height:7px; border-radius:50%; background:${color};
+      box-shadow:0 0 6px ${color};`;
+    const label = document.createElement("span");
+    label.textContent = PILLAR_LABELS[pk];
+    badge.appendChild(dot);
+    badge.appendChild(label);
+    badge.addEventListener("click", () => {
+      focusedPillar = (focusedPillar === pk) ? null : pk;
+      [...legend.children].forEach(b => {
+        const isActive = b.dataset.pillar === focusedPillar;
+        b.style.background = isActive ? "rgba(255,255,255,0.14)" : "rgba(255,255,255,0.06)";
+      });
+      applyFocusState();
+    });
+    legend.appendChild(badge);
+  });
+
+  // === Resize ===
+  window.addEventListener("resize", () => {
+    width = window.innerWidth; height = window.innerHeight;
+    svg.attr("width", width).attr("height", height)
+       .attr("viewBox", `0 0 ${width} ${height}`);
+    simulation.force("x", d3.forceX(width/2).strength(0.03));
+    simulation.force("y", d3.forceY(height/2).strength(0.03));
+    simulation.alpha(0.3).restart();
+  });
+
+})();
+</script>
+</body>
+</html>
